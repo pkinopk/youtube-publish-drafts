@@ -20,25 +20,6 @@
     // END OF CONFIG (not safe to edit stuff below)
     // -----------------------------------------------------------------
 
-    // Art by Joan G. Stark
-    // .'"'.        ___,,,___        .'``.
-    // : (\  `."'"```         ```"'"-'  /) ;
-    //  :  \                         `./  .'
-    //   `.                            :.'
-    //     /        _         _        \
-    //    |         0}       {0         |
-    //    |         /         \         |
-    //    |        /           \        |
-    //    |       /             \       |
-    //     \     |      .-.      |     /
-    //      `.   | . . /   \ . . |   .'
-    //        `-._\.'.(     ).'./_.-'
-    //            `\'  `._.'  '/'
-    //              `. --'-- .'
-    //                `-...-'
-
-
-
     // ----------------------------------
     // COMMON  STUFF
     // ---------------------------------
@@ -99,9 +80,9 @@
     const VISIBILITY_STEPPER_SELECTOR = '#step-badge-3';
     const VISIBILITY_PAPER_BUTTONS_SELECTOR = 'tp-yt-paper-radio-group';
     const SAVE_BUTTON_SELECTOR = '#done-button';
-    const SUCCESS_ELEMENT_SELECTOR = 'ytcp-video-thumbnail-with-info';
-    const DIALOG_SELECTOR = 'ytcp-dialog.ytcp-video-share-dialog > tp-yt-paper-dialog:nth-child(1)';
-    const DIALOG_CLOSE_BUTTON_SELECTOR = 'tp-yt-iron-icon';
+    const SUCCESS_ELEMENT_SELECTOR = 'ytcp-video-share-dialog'; // FIX: was 'ytcp-video-thumbnail-with-info'
+    const DIALOG_SELECTOR = 'ytcp-video-share-dialog tp-yt-paper-dialog'; // FIX: simplified selector
+    const DIALOG_CLOSE_BUTTON_SELECTOR = '#close-button, .ytcp-video-share-dialog tp-yt-iron-icon, button[aria-label="Close"]'; // FIX: broader close button targeting
 
     class SuccessDialog {
         constructor(raw) {
@@ -109,12 +90,37 @@
         }
 
         async closeDialogButton() {
-            return await waitForElement(DIALOG_CLOSE_BUTTON_SELECTOR, this.raw);
+            // FIX: Try multiple strategies to find the close button
+            // 1. Try the close button by aria-label inside the dialog
+            let btn = this.raw.querySelector('button[aria-label="Close"], #close-button');
+            if (btn) return btn;
+
+            // 2. Try tp-yt-iron-icon (original approach)
+            btn = this.raw.querySelector('tp-yt-iron-icon');
+            if (btn) return btn;
+
+            // 3. Fall back to waiting for it
+            return await waitForElement('tp-yt-iron-icon, #close-button, button[aria-label="Close"]', this.raw);
         }
 
         async close() {
-            click(await this.closeDialogButton());
-            await sleep(50);
+            // FIX: Also try clicking the "Close" text button at the bottom of the dialog
+            // as a fallback (visible in the screenshot as the grey "Close" button)
+            const closeBtn = await this.closeDialogButton();
+            if (closeBtn) {
+                click(closeBtn);
+            } else {
+                // Last resort: find any button with text "Close" in the document
+                const allButtons = [...document.querySelectorAll('button, tp-yt-paper-button')];
+                const textClose = allButtons.find(b => b.textContent.trim().toLowerCase() === 'close');
+                if (textClose) {
+                    debugLog('closing via text-match fallback button');
+                    click(textClose);
+                } else {
+                    debugLog('WARNING: could not find close button');
+                }
+            }
+            await sleep(200); // FIX: increased from 50ms to give dialog time to dismiss
             debugLog('closed');
         }
     }
@@ -143,14 +149,27 @@
         async saveButton() {
             return await waitForElement(SAVE_BUTTON_SELECTOR, this.raw);
         }
+
         async isSaved() {
-            await waitForElement(SUCCESS_ELEMENT_SELECTOR, document);
+            // FIX: wait for the share dialog to appear, not ytcp-video-thumbnail-with-info
+            const el = await waitForElement(SUCCESS_ELEMENT_SELECTOR, document, 15000);
+            if (!el) throw new Error('Timed out waiting for publish success dialog');
+            // Give the dialog a moment to fully render
+            await sleep(500);
+            return el;
         }
+
         async dialog() {
-            return await waitForElement(DIALOG_SELECTOR);
+            // FIX: wait for and return the paper dialog inside the share dialog
+            const shareDialog = await waitForElement(SUCCESS_ELEMENT_SELECTOR, document, 15000);
+            if (!shareDialog) return null;
+            const inner = shareDialog.querySelector('tp-yt-paper-dialog') || shareDialog;
+            return inner;
         }
+
         async save() {
             click(await this.saveButton());
+            debugLog('save clicked, waiting for success dialog...');
             await this.isSaved();
             debugLog('saved');
             const dialogElement = await this.dialog();
@@ -232,9 +251,7 @@
         await sleep(1000);
         for (let video of videos) {
             const draft = await video.openDraft();
-            debugLog({
-                draft
-            });
+            debugLog({ draft });
             await draft.selectMadeForKids();
             const visibility = await draft.goToVisibility();
             await visibility.setVisibility();
@@ -259,7 +276,7 @@
         }
 
         async anyMenuItem() {
-            const item =  await waitForElement(SORTING_ITEM_MENU_ITEM_SELECTOR, this.raw);
+            const item = await waitForElement(SORTING_ITEM_MENU_ITEM_SELECTOR, this.raw);
             if (item === null) {
                 throw new Error("could not locate any menu item");
             }
@@ -278,6 +295,7 @@
             click(this.menuItems()[MOVE_TO_BOTTOM_INDEX]);
         }
     }
+
     class PlaylistVideo {
         constructor(raw) {
             this.raw = raw;
@@ -295,12 +313,13 @@
             await dialog.anyMenuItem();
             return dialog;
         }
-
     }
+
     async function playlistVideos() {
         return [...document.querySelectorAll('ytd-playlist-video-renderer')]
             .map((el) => new PlaylistVideo(el));
     }
+
     async function sortPlaylist() {
         debugLog('sorting playlist');
         const videos = await playlistVideos();
@@ -310,16 +329,14 @@
 
         let index = 1;
         for (let name of videoNames) {
-            debugLog({index, name});
+            debugLog({ index, name });
             const video = videos.find((v) => v.name === name);
             const dialog = await video.openDialog();
             await dialog.moveToBottom();
             await sleep(1000);
             index += 1;
         }
-
     }
-
 
     // ----------------------------------
     // ENTRY POINT
@@ -329,6 +346,4 @@
         'sort_playlist': sortPlaylist,
     })[MODE]();
 
-
 })();
-
