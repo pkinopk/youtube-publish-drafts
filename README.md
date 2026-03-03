@@ -1,11 +1,8 @@
 # youtube-publish-drafts
 
-## help
-to get help join our discord server https://discord.gg/xj6JxW8k
-
 ## support development of this project
 ```
-BTC: bc1qksrtrwkhq043h56rsh9d4zdnmk0d43tm4m6xux
+BTC: 
 ```
 
 ## about
@@ -19,4 +16,4 @@ if you were to do that, (which I'm pretty sure is against YouTube's terms of use
 3. paste the entire content of youtube-publish-drafts.js file
 4. wait
 
-It should work as of 26.12.2020.
+Working 3/3/2026
